@@ -12,7 +12,6 @@
 <body>
   <h1>Next Buses</h1>
   <div id="bus-info">Loading...</div>
-  https://truetime.portauthority.org/bustime/api/v3/getstops?key=jB5f4FaqsrnktmSPx34QsykWT&format=json&rt=67&dir=INBOUND
   <script>
     const API_KEY = "jB5f4FaqsrnktmSPx34QsykWT";  // Replace this
     const STOP_ID = "29";         // Replace this
@@ -25,7 +24,7 @@
         const div = document.getElementById("bus-info");
         div.innerHTML = "";
 
-        const preds = data?.bustime_response?.prd || [];
+        const preds = data?.bustime-response?.prd || [];
         if (preds.length === 0) {
           div.innerHTML = "<p>No upcoming buses.</p>";
           return;
