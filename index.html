@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Next Bus Display</title>
+  <style>
+    body { font-family: sans-serif; background: black; color: white; text-align: center; margin-top: 3em; }
+    .route { font-size: 2em; margin-top: 1em; }
+    .arrival { font-size: 1.5em; margin: 0.5em 0; }
+  </style>
+</head>
+<body>
+  <h1>Next Buses</h1>
+  <div id="bus-info">Loading...</div>
+
+  <script>
+    const API_KEY = "YOUR_API_KEY";  // Replace this
+    const STOP_ID = "12345";         // Replace this
+    const API_URL = `https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${STOP_ID}`;
+
+    async function fetchData() {
+      try {
+        const response = await fetch(API_URL);
+        const data = await response.json();
+        const div = document.getElementById("bus-info");
+        div.innerHTML = "";
+
+        const preds = data?.bustime_response?.prd || [];
+        if (preds.length === 0) {
+          div.innerHTML = "<p>No upcoming buses.</p>";
+          return;
+        }
+
+        preds.forEach(pred => {
+          const mins = pred.prdctdn === "DUE" ? "Due" : `${pred.prdctdn} min`;
+          div.innerHTML += `<div class="route">${pred.rt}</div><div class="arrival">${pred.des} – ${mins}</div>`;
+        });
+      } catch (err) {
+        document.getElementById("bus-info").innerHTML = "Error loading data.";
+      }
+    }
+
+    fetchData();
+    setInterval(fetchData, 30000);
+  </script>
+</body>
+</html>
