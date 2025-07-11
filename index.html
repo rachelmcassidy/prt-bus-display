@@ -15,7 +15,7 @@
   <script>
     const API_KEY = "jB5f4FaqsrnktmSPx34QsykWT";  // Replace this
     const STOP_ID = "29";         // Replace this
-    const URL = `https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${STOP_ID}&rtpidatafeed=Port%20Authority%20Bus`;
+    const API_URL = `https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${STOP_ID}&rtpidatafeed=Port%20Authority%20Bus`;
 
     async function fetchData() {
       try {
@@ -24,7 +24,14 @@
         const div = document.getElementById("bus-info");
         div.innerHTML = "";
 
-        const preds = data?.bustime-response?.prd || [];
+        // Check for API error messages first
+        if (data['bustime-response']?.error) {
+          const errorMsg = data['bustime-response'].error[0]?.msg || "Unknown API error";
+          div.innerHTML = `<p>API Error: ${errorMsg}</p>`;
+          return;
+        }
+
+        const preds = data['bustime-response']?.prd || [];
         if (preds.length === 0) {
           div.innerHTML = "<p>No upcoming buses.</p>";
           return;
@@ -35,7 +42,8 @@
           div.innerHTML += `<div class="route">${pred.rt}</div><div class="arrival">${pred.des} – ${mins}</div>`;
         });
       } catch (err) {
-        document.getElementById("bus-info").innerHTML = "Error loading data.";
+        console.error("Fetch error:", err);
+        document.getElementById("bus-info").innerHTML = `Error loading data: ${err.message}`;
       }
     }
 
