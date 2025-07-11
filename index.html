@@ -12,11 +12,11 @@
 <body>
   <h1>Next Buses</h1>
   <div id="bus-info">Loading...</div>
-
+  https://truetime.portauthority.org/bustime/api/v3/getstops?key=jB5f4FaqsrnktmSPx34QsykWT&format=json&rt=67&dir=INBOUND
   <script>
     const API_KEY = "jB5f4FaqsrnktmSPx34QsykWT";  // Replace this
     const STOP_ID = "29";         // Replace this
-    const API_URL = `https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${STOP_ID}`;
+    const URL = `https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${STOP_ID}&rtpidatafeed=Port%20Authority%20Bus`;
 
     async function fetchData() {
       try {
