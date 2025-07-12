@@ -5,46 +5,109 @@
   <title>Next Bus Display</title>
   <style>
     body { font-family: sans-serif; background: black; color: white; text-align: center; margin-top: 3em; }
-    .route { font-size: 2em; margin-top: 1em; }
+    .route { font-size: 2em; margin-top: 1em; text-align: left; }
     .arrival { font-size: 1.5em; margin: 0.5em 0; }
   </style>
 </head>
 <body>
-  <h1>Next Buses</h1>
+  <h1 id="current-time">Current Time: Loading...</h1>
   <div id="bus-info">Loading...</div>
   <script>
     const API_KEY = "jB5f4FaqsrnktmSPx34QsykWT";  // Replace this
-    const STOP_ID = "29";         // Replace this
-    const API_URL = `https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${STOP_ID}&rtpidatafeed=Port%20Authority%20Bus`;
+    const CORS_PROXY = "https://api.allorigins.win/raw?url=";
+
+    // Define stops with their routes and directions
+    const stops = [
+      { 
+        id: "29", 
+        routes: [
+          { route: "61A", directions: ["OUT"] },
+          { route: "61B", directions: ["OUT"] },
+          { route: "61C", directions: ["OUT"] },
+          { route: "61D", directions: ["OUT"] },
+          { route: "67", directions: ["OUT"] },
+          { route: "69", directions: ["OUT"] }
+        ]
+      },
+      { 
+        id: "7639", 
+        routes: [
+          { route: "67", directions: ["IN"] },
+          { route: "69", directions: ["IN"] }
+        ]
+      }
+    ];
+
+    function updateTime() {
+      const now = new Date();
+      const timeString = now.toLocaleTimeString();
+      document.getElementById("current-time").textContent = `Current Time: ${timeString}`;
+    }
 
     async function fetchData() {
+      updateTime(); // Update time each time we fetch data
       try {
-        const response = await fetch(API_URL);
-        const data = await response.json();
         const div = document.getElementById("bus-info");
         div.innerHTML = "";
 
-        // Check for API error messages first
-        if (data['bustime-response']?.error) {
-          const errorMsg = data['bustime-response'].error[0]?.msg || "Unknown API error";
-          div.innerHTML = `<p>API Error: ${errorMsg}</p>`;
-          return;
+        // Fetch data for all stops
+        for (let i = 0; i < stops.length; i++) {
+          const stop = stops[i];
+          const API_URL = `${CORS_PROXY}${encodeURIComponent(`https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${stop.id}&rtpidatafeed=Port%20Authority%20Bus`)}`;
+          
+          const response = await fetch(API_URL);
+          const data = await response.json();
+          
+          displayStopData(data, stop.id, stop.routes, div);
+          
+          // Add separator between stops (except for last stop)
+          if (i < stops.length - 1) {
+            div.innerHTML += "<hr style='margin: 2em 0; border: 1px solid #555;'>";
+          }
         }
-
-        const preds = data['bustime-response']?.prd || [];
-        if (preds.length === 0) {
-          div.innerHTML = "<p>No upcoming buses.</p>";
-          return;
-        }
-
-        preds.forEach(pred => {
-          const mins = pred.prdctdn === "DUE" ? "Due" : `${pred.prdctdn} min`;
-          div.innerHTML += `<div class="route">${pred.rt}</div><div class="arrival">${pred.des} – ${mins}</div>`;
-        });
       } catch (err) {
         console.error("Fetch error:", err);
         document.getElementById("bus-info").innerHTML = `Error loading data: ${err.message}`;
       }
+    }
+
+    function displayStopData(data, stopId, routesToShow, div) {
+      if (data['bustime-response']?.error) {
+        const errorMsg = data['bustime-response'].error[0]?.msg || "Unknown API error";
+        div.innerHTML += `<p>API Error for Stop ${stopId}: ${errorMsg}</p>`;
+        return;
+      }
+
+      const preds = data['bustime-response']?.prd || [];
+      
+      // Get stop name (from predictions if available, otherwise use stop ID)
+      const stopName = preds.length > 0 ? preds[0]?.stpnm : `Stop ${stopId}`;
+      div.innerHTML += `<h2 style="font-size: 1.8em; margin-bottom: 1em; color: #ccc;">${stopName}</h2>`;
+
+      // Group predictions by route and direction
+      const grouped = {};
+      preds.forEach(pred => {
+        const direction = pred.rtdir === "INBOUND" ? "IN" : pred.rtdir === "OUTBOUND" ? "OUT" : "";
+        const key = `${pred.rt} (${direction})`;
+        if (!grouped[key]) {
+          grouped[key] = [];
+        }
+        const mins = pred.prdctdn === "DUE" ? "Due" : `${pred.prdctdn} min`;
+        grouped[key].push(mins);
+      });
+
+      // Display routes in the order specified in routesToShow
+      routesToShow.forEach(routeConfig => {
+        routeConfig.directions.forEach(direction => {
+          const key = `${routeConfig.route} (${direction})`;
+          
+          if (grouped[key]) {
+            div.innerHTML += `<div class="route">${key}: ${grouped[key].join(', ')}</div>`;
+          } else {
+            div.innerHTML += `<div class="route">${key}: None</div>`;
+          }
+        });
+      });
     }
 
     fetchData();
