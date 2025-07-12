@@ -35,7 +35,16 @@
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script>
     const API_KEY = "jB5f4FaqsrnktmSPx34QsykWT";  // Replace this
-    const CORS_PROXY = "https://api.allorigins.win/raw?url=";
+    function makeCorsUrl(url) {
+      return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    }
+
+    function getFreshPredictionUrl(stopId) {
+      const timestamp = Date.now(); // cache-busting
+      return makeCorsUrl(
+        `https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${stopId}&rtpidatafeed=Port%20Authority%20Bus&cb=${timestamp}`
+      );
+    }
     console.log("Script is running");
 
     // Host your GTFS CSV files somewhere public and accessible:
@@ -211,9 +220,21 @@
         // Fetch data for all stops
         for (let i = 0; i < stops.length; i++) {
           const stop = stops[i];
-          const API_URL = `${CORS_PROXY}${encodeURIComponent(`https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${stop.id}&rtpidatafeed=Port%20Authority%20Bus`)}`;
+          const timestamp = Date.now();  // cache-busting value
+          const apiBaseUrl = `https://truetime.portauthority.org/bustime/api/v3/getpredictions?key=${API_KEY}&format=json&stpid=${stop.id}&rtpidatafeed=Port%20Authority%20Bus&cb=${timestamp}`;
+          // const API_URL = `${CORS_PROXY}${encodeURIComponent(apiBaseUrl)}`;
           
-          const response = await fetch(API_URL);
+          const API_URL = getFreshPredictionUrl(stop.id);
+
+          let response;
+          try {
+            response = await fetch(API_URL, { cache: "no-store" }); // hint to avoid reuse
+          } catch (err) {
+            console.error("Network error:", err);
+            div.innerHTML += `<p>Network error fetching stop ${stop.id}</p>`;
+            continue;
+          }
+          // const response = await fetch(API_URL);
           const data = await response.json();
           
           // Get the appropriate column div
@@ -274,12 +295,13 @@
                 .map(p => parseInt(p))
                 .filter(n => !isNaN(n))
             );
-            const now = new Date();
+            
             
             schedTimes = schedules[scheduleKey]
               .map(timeStr => {
                 // Convert scheduled HH:MM to minutes from now
                 const [hh, mm] = timeStr.split(":").map(Number);
+                const now = new Date();
                 const schedDate = new Date(now);
                 schedDate.setHours(hh, mm, 0, 0);
                 const diffMins = (schedDate - now) / (1000 * 60);
