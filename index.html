@@ -4,22 +4,30 @@
   <meta charset="UTF-8">
   <title>Bus Display</title>
   <style>
-    body { font-family: sans-serif; background: black; color: white; text-align: center; margin-top: 3em; }
-    .route { font-size: 2em; margin-top: 1em; text-align: left; }
-    .arrival { font-size: 1.5em; margin: 0.5em 0; }
+    body { font-family: sans-serif; background: black; color: white; margin-top: 3em; }
+    #current-time { text-align: left; margin-left: 2em; font-size: 2em; margin-top: 0; margin-bottom: 1em; }
+    #stops-container { display: flex; justify-content: space-between; margin: 0 2em; }
+    .stop-column { flex: 1; margin: 0 1em; }
+    h2 { text-align: left; margin-left: 0; font-size: 1.8em; margin-bottom: 1em; color: #ccc; }
+    .route { font-size: 1.5em; margin-top: 0.5em; text-align: left; margin-left: 1em; font-weight: normal; }
+    .route-number { font-weight: bold; }
+    .arrival { font-size: 1.5em; margin: 0.5em 0; font-weight: normal; }
     .scheduled { color: yellow; font-style: italic; }
   </style>
-  <!-- PapaParse for CSV parsing -->
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-
+  
 </head>
 <body>
   <h1 id="current-time">Current Time: Loading...</h1>
-  <div id="bus-info">Loading...</div>
+  <div id="stops-container">
+    <div id="stop-0" class="stop-column"></div>
+    <div id="stop-1" class="stop-column"></div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script>
     const API_KEY = "jB5f4FaqsrnktmSPx34QsykWT";  // Replace this
     const CORS_PROXY = "https://api.allorigins.win/raw?url=";
-    
+    console.log("Script is running");
+
     // Host your GTFS CSV files somewhere public and accessible:
     const GTFS_BASE_URL = "https://rachelmcassidy.github.io/prt-bus-display/gtfs/"; // REPLACE with your hosted GTFS CSV folder URL
 
@@ -38,20 +46,30 @@
         ]
       },
       { 
-        id: "7639", 
+        id: "2564", 
         routes: [
-          { route: "67", directions: ["IN"] },
-          { route: "69", directions: ["IN"] }
+          { route: "71A", directions: ["OUT"] },
+          { route: "71B", directions: ["OUT"] },
+          { route: "71C", directions: ["OUT"] },
+          { route: "71D", directions: ["OUT"] },
+          { route: "75", directions: ["OUT"] },
+          { route: "P3", directions: ["OUT"] }
         ]
-      }
+      }//,
+      // { 
+      //   id: "7639", 
+      //   routes: [
+      //     { route: "67", directions: ["IN"] },
+      //     { route: "69", directions: ["IN"] }
+      //   ]
+      // }
     ];
 
     // === GTFS Static CSV data caches ===
     let gtfsStopTimes = null;
     let gtfsTrips = null;
-    let gtfsRoutes = null;
     let gtfsCalendar = null;
-
+    // console.log("Loaded stop_times sample:", gtfsStopTimes.slice(0, 5));
     // Helper: fetch and parse CSV using PapaParse
     async function fetchAndParseCSV(url) {
       const response = await fetch(url);
@@ -67,12 +85,36 @@
 
     // Load all GTFS CSV files once at startup
     async function loadGtfsStaticData() {
-      [gtfsStopTimes, gtfsTrips, gtfsRoutes, gtfsCalendar] = await Promise.all([
+      [gtfsStopTimes, gtfsTrips, gtfsCalendar] = await Promise.all([
         fetchAndParseCSV(GTFS_BASE_URL + "my_times.txt"),
         fetchAndParseCSV(GTFS_BASE_URL + "trips.txt"),
         fetchAndParseCSV(GTFS_BASE_URL + "calendar.txt")
       ]);
+      
     }
+    // Get active service IDs for today
+    function getActiveServiceIds() {
+      const today = new Date();
+      const yyyyMMdd = today.toISOString().slice(0, 10).replace(/-/g, "");
+
+      const weekdayMap = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+      // JS Sunday=0, so adjust for GTFS (Sunday=6)
+      const weekdayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1;
+
+      return gtfsCalendar
+        .filter(row => (
+          row.start_date <= yyyyMMdd &&
+          row.end_date >= yyyyMMdd &&
+          row[weekdayMap[weekdayIndex]] === "1"
+        ))
+        .map(row => row.service_id);
+    }
+
+    // Filter trips to only active service IDs
+    function getActiveTrips(activeServiceIds) {
+      return gtfsTrips.filter(trip => activeServiceIds.includes(trip.service_id));
+    }
+
 
     // Parse time like "25:10:00" to a Date object today (+1 day if time < current time)
     function parseGtfsTimeToDate(timeStr) {
@@ -89,67 +131,60 @@
       return d;
     }
 
-    // Get active service_ids for today from calendar.txt
-    function getActiveServiceIds() {
-      const today = new Date();
-      const yyyyMMdd = today.toISOString().slice(0, 10).replace(/-/g, "");
+        // Preprocess GTFS schedules into a map for quick lookup by "route (dir)" and stop_id
+    function buildScheduleMap() {
+      const activeServiceIds = getActiveServiceIds();
+      const activeTrips = getActiveTrips(activeServiceIds);
+      const activeTripIds = new Set(activeTrips.map(t => t.trip_id));
+      const scheduleMap = {}; // key: "route (dir) stopId" => [array of Date]
+      // console.log(gtfsStopTimes.slice(0, 1));
+      for (const stopTime of gtfsStopTimes) {
+        const stopId = stopTime.stop_id;
+        const tripId = stopTime.trip_id;
+        const arrival = stopTime.arrival_time;
 
-      // GTFS calendar weekday mapping: Monday=1, Sunday=7
-      const weekdayIndex = today.getDay() === 0 ? 7 : today.getDay(); // Sunday=0 in JS, 7 in GTFS
-      const weekdayMap = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+        if (!stopId || !tripId || !arrival) continue;
+        if (!activeTripIds.has(tripId)) continue;  // Skip trips not active today
 
-      return gtfsCalendar
-        .filter(row => {
-          return (
-            row.start_date <= yyyyMMdd &&
-            row.end_date >= yyyyMMdd &&
-            row[weekdayMap[weekdayIndex - 1]] === "1"
-          );
-        })
-        .map(row => row.service_id);
+        // Find trip to get route_id and direction_id (direction_id: 0 or 1)
+        const trip = activeTrips.find(t => t.trip_id === tripId);
+        if (!trip) continue;
+        // console.log(trip);
+        // For simplicity, assume direction_id 0 = OUT, 1 = IN (adjust if needed)
+        const direction = trip.direction_id === "1" ? "IN" : "OUT";
+        const route = trip.route_id;
+
+        const key = `${route} (${direction}) ${stopId}`;
+        if (!scheduleMap[key]) scheduleMap[key] = [];
+        // console.log(arrival);
+        const dateObj = parseGtfsTimeToDate(arrival);
+        const hhmm = dateObj.toTimeString().slice(0, 5); // Format as "HH:MM"
+        // console.log(dateObj.toTimeString());
+        // console.log(hhmm);
+        scheduleMap[key].push(hhmm);
+      }
+
+      // Sort times ascending
+      for (const key in scheduleMap) {
+        scheduleMap[key].sort((a, b) => a.localeCompare(b));
+      }
+
+      return scheduleMap;
     }
 
-    // Filter trips to only active service trips
-    function getActiveTrips(activeServiceIds) {
-      const trips = {};
-      gtfsTrips.forEach(row => {
-        if (activeServiceIds.includes(row.service_id)) {
-          trips[row.trip_id] = {
-            route_id: row.route_id,
-            direction_id: row.direction_id,
-          };
-        }
-      });
-      return trips;
+    let schedules = {};
+    async function init() {
+      await loadGtfsStaticData();
+      schedules = buildScheduleMap(); // Preprocess schedules into a map
+      // console.log("Schedules after build:", schedules);
+      await fetchData(); // Initial fetch to populate data
+      setInterval(fetchData, 30000); // Refresh every 30 seconds
+      
     }
 
-    // Extract scheduled arrivals for a stop within the next hour grouped by route and direction
-    function getScheduledTimesForStop(stopId, tripsMap, routeMap) {
-      const now = new Date();
-      const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-      const scheduleByRouteDir = {};
+    init();
 
-      gtfsStopTimes.forEach(row => {
-        if (row.stop_id !== stopId) return;
-        const trip = tripsMap[row.trip_id];
-        if (!trip) return;
-
-        const arrivalDate = parseGtfsTimeToDate(row.arrival_time);
-        if (arrivalDate >= now && arrivalDate <= oneHourLater) {
-          const routeName = trip.route_id;
-          const direction = trip.direction_id === "1" ? "IN" : "OUT";
-          const key = `${routeName} (${direction})`;
-          if (!scheduleByRouteDir[key]) scheduleByRouteDir[key] = [];
-          // Format time as HH:MM
-          const hhmm = arrivalDate.toTimeString().slice(0, 5);
-          scheduleByRouteDir[key].push(hhmm);
-        }
-      });
-
-      return scheduleByRouteDir;
-    }
-
-
+    
     function updateTime() {
       const now = new Date();
       const timeString = now.toLocaleTimeString();
@@ -159,8 +194,9 @@
     async function fetchData() {
       updateTime(); // Update time each time we fetch data
       try {
-        const div = document.getElementById("bus-info");
-        div.innerHTML = "";
+        // Clear all stop columns
+        document.getElementById("stop-0").innerHTML = "";
+        document.getElementById("stop-1").innerHTML = "";
 
         // Fetch data for all stops
         for (let i = 0; i < stops.length; i++) {
@@ -170,16 +206,14 @@
           const response = await fetch(API_URL);
           const data = await response.json();
           
-          displayStopData(data, stop.id, stop.routes, div);
+          // Get the appropriate column div
+          const columnDiv = document.getElementById(`stop-${i}`);
           
-          // Add separator between stops (except for last stop)
-          if (i < stops.length - 1) {
-            div.innerHTML += "<hr style='margin: 2em 0; border: 1px solid #555;'>";
-          }
+          displayStopData(data, stop.id, stop.routes, columnDiv, schedules);
         }
       } catch (err) {
         console.error("Fetch error:", err);
-        document.getElementById("bus-info").innerHTML = `Error loading data: ${err.message}`;
+        document.getElementById("stops-container").innerHTML = `Error loading data: ${err.message}`;
       }
     }
 
@@ -212,44 +246,58 @@
       routesToShow.forEach(routeConfig => {
         routeConfig.directions.forEach(direction => {
           const key = `${routeConfig.route} (${direction})`;
-          
-          if (grouped[key]) {
-            div.innerHTML += `<div class="route">${key}: ${grouped[key].join(', ')}</div>`;
-          } else {
-            div.innerHTML += `<div class="route">${key}: None</div>`;
-          }
+          const predTimes = grouped[key] || [];
 
+          let schedTimes = [];
           // Scheduled times display (those not in predictions)
-          if (schedules && schedules[key]) {
+          const scheduleKey = `${routeConfig.route} (${direction}) ${stopId}`;
+          
+          if (schedules && schedules[scheduleKey]) {
             // Filter out scheduled times that appear in predictions (approximate)
             const predsMinutes = new Set(
-              (groupedPreds[key] || [])
+              predTimes
                 .filter(p => p !== "Due")
                 .map(p => parseInt(p))
                 .filter(n => !isNaN(n))
             );
             const now = new Date();
-
-            const filteredScheduled = schedules[key].filter(timeStr => {
-              // Convert scheduled HH:MM to minutes from now
-              const [hh, mm] = timeStr.split(":").map(Number);
-              const schedDate = new Date(now);
-              schedDate.setHours(hh, mm, 0, 0);
-              const diffMins = (schedDate - now) / (1000 * 60);
-              // Keep if diffMins not in predsMinutes (+-2 min tolerance)
-              return !Array.from(predsMinutes).some(pm => Math.abs(pm - diffMins) <= 2);
-            });
-
-            if (filteredScheduled.length > 0) {
-              div.innerHTML += `<div class="route scheduled">${key} Scheduled: ${filteredScheduled.join(", ")}</div>`;
-            }
+            
+            schedTimes = schedules[scheduleKey]
+              .map(timeStr => {
+                // Convert scheduled HH:MM to minutes from now
+                const [hh, mm] = timeStr.split(":").map(Number);
+                const schedDate = new Date(now);
+                schedDate.setHours(hh, mm, 0, 0);
+                const diffMins = (schedDate - now) / (1000 * 60);
+                return { timeStr, diffMins };
+              })
+              .filter(({ diffMins }) =>
+                diffMins >= 30 &&
+                diffMins <= 60 &&
+                !Array.from(predsMinutes).some(pm => Math.abs(pm - diffMins) <= 2)
+              );
+              // edge case between 11 and midnight - upcoming times within an hour are filtered out by day - fix later
           }
+          
+          // Build combined HTML
+          let line = `<div class="route"><span class="route-number">${routeConfig.route}</span>: `;
+          line += predTimes.join(', ');
+          // Add scheduled (yellow) after predictions, if any
+          if (schedTimes.length > 0) {
+            if (predTimes.length > 0) line += ', ';
+            const formattedSched = schedTimes.map(
+              ({ diffMins }) => `<span class="scheduled">${Math.round(diffMins)} min</span>`
+            );
+            line += formattedSched.join(', ');
+          }
+          if (predTimes.length === 0 && schedTimes.length === 0) {
+            line += 'None';
+          }
+          line += `</div>`;
+          div.innerHTML += line;
         });
       });
     }
-
-    fetchData();
-    setInterval(fetchData, 30000);
   </script>
 </body>
 </html>
